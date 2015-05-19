@@ -90,6 +90,12 @@ Parse.Cloud.define("checkAuthors", function (request, response) {
 });
 
 Parse.Cloud.beforeSave("Book", function (request, response) {
+  var _arguments = arguments;
+
+  var toArray = function toArray() {
+    return Array.from(_arguments);
+  };
+  var widths = [200, 600];
   var book = request.object;
 
   if (!book.dirty("cover_orig")) {
@@ -107,7 +113,6 @@ Parse.Cloud.beforeSave("Book", function (request, response) {
     var calcHeight = function calcHeight(width) {
       return origH / (origW / width);
     };
-    var widths = [200, 600];
 
     return widths.map(function (width) {
       var height = calcHeight(width);
@@ -117,23 +122,26 @@ Parse.Cloud.beforeSave("Book", function (request, response) {
         return imageCopy.scale({ width: width, height: height });
       });
     });
-  }).then(Parse.Promise.when).then(function (images) {
-    // Make sure it's a JPEG to save disk space and bandwidth.
+  }).then(Parse.Promise.when).then(toArray).then(function (images) {
     return images.map(function (image) {
       return image.setFormat("JPEG");
     });
-  }).then(function (images) {
-    // Get the image data in a Buffer.
+  }).then(Parse.Promise.when).then(toArray).then(function (image200, image600) {
     return images.map(function (image) {
       return image.data();
     });
-  }).then(function (buffers) {
-    // Save the image into a new file.
-    var base64 = buffer.toString("base64");
-    var scaled = new Parse.File("thumbnail.jpg", { base64: base64 });
-    return scaled.save();
-  }).then(function (scaled) {
-    // Attach the image file to the original object.
-    book.set("cover_200", scaled);
+  }).then(Parse.Promise.when).then(toArray).then(function (buffers) {
+    var scaledFiles = buffers.map(function (buffer) {
+      return buffer.toString("base64");
+    }).map(function (base64) {
+      return new Parse.File("thumbnail.jpg", { base64: base64 });
+    });
+    return scaledFiles.map(function (scaled) {
+      return scaled.save();
+    });
+  }).then(Parse.Promise.when).then(toArray).then(function (scaledFiles) {
+    scaledFiles.forEach(function (scaled, i) {
+      book.set("cover_" + widths[i], scaled);
+    });
   }).then(response.success, response.error);
 });

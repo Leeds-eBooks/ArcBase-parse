@@ -90,6 +90,8 @@ Parse.Cloud.define('checkAuthors', function(request, response) {
 });
 
 Parse.Cloud.beforeSave("Book", function(request, response) {
+  const toArray = () => Array.from(arguments);
+  const widths = [200, 600];
   var book = request.object;
 
   if (!book.dirty("cover_orig")) {
@@ -106,7 +108,6 @@ Parse.Cloud.beforeSave("Book", function(request, response) {
     const origW = image.width();
     const origH = image.height();
     const calcHeight = width => origH / (origW / width);
-    const widths = [200, 600];
 
     return widths.map(width => {
       const height = calcHeight(width);
@@ -116,24 +117,25 @@ Parse.Cloud.beforeSave("Book", function(request, response) {
         .then(imageCopy => imageCopy.scale({width, height}));
     });
   })
-  .then(Parse.Promise.when)
+  .then(Parse.Promise.when).then(toArray)
   .then(function(images) {
-    // Make sure it's a JPEG to save disk space and bandwidth.
     return images.map(image => image.setFormat("JPEG"));
   })
-  .then(function(images) {
-    // Get the image data in a Buffer.
+  .then(Parse.Promise.when).then(toArray)
+  .then(function(image200, image600) {
     return images.map(image => image.data());
   })
+  .then(Parse.Promise.when).then(toArray)
   .then(function(buffers) {
-    // Save the image into a new file.
-    var base64 = buffer.toString("base64");
-    var scaled = new Parse.File("thumbnail.jpg", {base64});
-    return scaled.save();
+    const scaledFiles = buffers.map(buffer => buffer.toString("base64"))
+      .map(base64 => new Parse.File("thumbnail.jpg", {base64}));
+    return scaledFiles.map(scaled => scaled.save());
   })
-  .then(function(scaled) {
-    // Attach the image file to the original object.
-    book.set("cover_200", scaled);
+  .then(Parse.Promise.when).then(toArray)
+  .then(function(scaledFiles) {
+    scaledFiles.forEach((scaled, i) => {
+      book.set("cover_" + widths[i], scaled);
+    });
   })
   .then(response.success, response.error);
 });
