@@ -1,7 +1,8 @@
 const Image = require("parse-image");
+const _ = require("underscore");
 
 Parse.Cloud.define('checkAuthors', function(request, response) {
-  var submitted=request.params.authors;
+  var submitted = request.params.authors;
   /* Copyright (c) 2014. All Rights reserved.
 
   If you use this script, I'd love to know, thanks!
@@ -61,8 +62,8 @@ Parse.Cloud.define('checkAuthors', function(request, response) {
   }());
 
   // checkAuthor -->
-  var query=new Parse.Query("Author");
-  var res=[];
+  var query = new Parse.Query("Author");
+  var res = [];
   query.limit(1000).find().then(authors => {
     // var names=authors.map(author => author.get('name'));
     submitted.forEach(sub => {
@@ -99,28 +100,40 @@ Parse.Cloud.beforeSave("Book", function(request, response) {
 
   Parse.Cloud.httpRequest({
     url: book.get("cover_orig").url()
-  }).then(function(response) {
-    const image = new Image();
-    return image.setData(response.buffer);
-  }).then(function(image) {
-    var origW = image.width(),
-        origH = image.height(),
-        width = 200,
-        height = origH / (origW / width);
-    return image.scale({width, height});
-  }).then(function(image) {
+  })
+  .then(function(response) {
+    const image = (new Image()).setData(response.buffer);
+    const origW = image.width();
+    const origH = image.height();
+    const calcHeight = width => origH / (origW / width);
+    const widths = [200, 600];
+
+    return widths.map(width => {
+      const height = calcHeight(width);
+      const imageCopy = new Image();
+
+      return imageCopy.setData(response.buffer)
+        .then(imageCopy => imageCopy.scale({width, height}));
+    });
+  })
+  .then(Parse.Promise.when)
+  .then(function(images) {
     // Make sure it's a JPEG to save disk space and bandwidth.
-    return image.setFormat("JPEG");
-  }).then(function(image) {
+    return images.map(image => image.setFormat("JPEG"));
+  })
+  .then(function(images) {
     // Get the image data in a Buffer.
-    return image.data();
-  }).then(function(buffer) {
+    return images.map(image => image.data());
+  })
+  .then(function(buffers) {
     // Save the image into a new file.
     var base64 = buffer.toString("base64");
     var scaled = new Parse.File("thumbnail.jpg", {base64});
     return scaled.save();
-  }).then(function(scaled) {
+  })
+  .then(function(scaled) {
     // Attach the image file to the original object.
     book.set("cover_200", scaled);
-  }).then(response.success, response.error);
+  })
+  .then(response.success, response.error);
 });
