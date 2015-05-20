@@ -104,9 +104,7 @@ Parse.Cloud.beforeSave("Book", function (request, response) {
 
   console.log("PROCESS STARTED");
 
-  Parse.Cloud.httpRequest({
-    url: book.get("cover_orig").url()
-  }).then(function (response) {
+  Parse.Cloud.httpRequest({ url: book.get("cover_orig").url() }).then(function (response) {
     return new Image().setData(response.buffer);
   }).then(function (image) {
     var origW = image.width();
@@ -125,32 +123,34 @@ Parse.Cloud.beforeSave("Book", function (request, response) {
         return imageCopy.scale({ width: width, height: height });
       });
     });
-  }).then(Parse.Promise.when).then(toArray).then(function (images) {
+  }).then(Parse.Promise.when).then(toArray)
+  // Make sure it's a jpg
+  .then(function (images) {
     return images.map(function (image) {
       return image.setFormat("JPEG");
     });
-  }).then(Parse.Promise.when).then(toArray).then(function (images) {
+  }).then(Parse.Promise.when).then(toArray)
+  // Convert to buffer
+  .then(function (images) {
     return images.map(function (image) {
       return image.data();
     });
-  }).then(Parse.Promise.when).then(toArray).then(function (buffers) {
-    var scaledFiles = buffers.map(function (buffer) {
+  }).then(Parse.Promise.when).then(toArray)
+  // Save to new file
+  .then(function (buffers) {
+    return buffers.map(function (buffer) {
       return buffer.toString("base64");
     }).map(function (base64) {
-      var file = new Parse.File("thumbnail.jpg", { base64: base64 });
-      return file;
-    });
-    // console.log('reached 5');
-    console.log("scaledFiles.length = " + scaledFiles.length);
-    return scaledFiles.map(function (scaled) {
+      return new Parse.File("thumbnail.jpg", { base64: base64 });
+    }).map(function (scaled) {
       return scaled.save();
     });
-  }).then(Parse.Promise.when).then(toArray).then(function (scaledFiles) {
-    console.log(scaledFiles.length, typeof scaledFiles[0]);
+  }).then(Parse.Promise.when).then(toArray)
+  // Add to book
+  .then(function (scaledFiles) {
     scaledFiles.forEach(function (scaled, i) {
-      console.log("reached 6");
-      book.set("cover_" + widths[i], scaled);
+      return book.set("cover_" + widths[i], scaled);
     });
-    console.log("PROCESS TOOK " + (Date.now() - start) / 1000 + " SECONDS");
+    console.log("PROCESS COMPLETED IN " + (Date.now() - start) / 1000 + " SECONDS");
   }).then(response.success, response.error);
 });
