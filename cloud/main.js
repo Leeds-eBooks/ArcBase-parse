@@ -90,24 +90,25 @@ Parse.Cloud.define("checkAuthors", function (request, response) {
 });
 
 Parse.Cloud.beforeSave("Book", function (request, response) {
-  var _arguments = arguments;
-
+  var start = Date.now();
   var toArray = function toArray() {
-    return Array.from(_arguments);
+    return _.toArray(arguments);
   };
   var widths = [200, 600];
   var book = request.object;
 
   if (!book.dirty("cover_orig")) {
-    // The image isn't being modified.
     response.success();
     return;
   }
 
+  console.log("PROCESS STARTED");
+
   Parse.Cloud.httpRequest({
     url: book.get("cover_orig").url()
   }).then(function (response) {
-    var image = new Image().setData(response.buffer);
+    return new Image().setData(response.buffer);
+  }).then(function (image) {
     var origW = image.width();
     var origH = image.height();
     var calcHeight = function calcHeight(width) {
@@ -118,7 +119,9 @@ Parse.Cloud.beforeSave("Book", function (request, response) {
       var height = calcHeight(width);
       var imageCopy = new Image();
 
-      return imageCopy.setData(response.buffer).then(function (imageCopy) {
+      return image.data().then(function (buffer) {
+        return imageCopy.setData(buffer);
+      }).then(function (imageCopy) {
         return imageCopy.scale({ width: width, height: height });
       });
     });
@@ -126,7 +129,7 @@ Parse.Cloud.beforeSave("Book", function (request, response) {
     return images.map(function (image) {
       return image.setFormat("JPEG");
     });
-  }).then(Parse.Promise.when).then(toArray).then(function (image200, image600) {
+  }).then(Parse.Promise.when).then(toArray).then(function (images) {
     return images.map(function (image) {
       return image.data();
     });
@@ -134,14 +137,20 @@ Parse.Cloud.beforeSave("Book", function (request, response) {
     var scaledFiles = buffers.map(function (buffer) {
       return buffer.toString("base64");
     }).map(function (base64) {
-      return new Parse.File("thumbnail.jpg", { base64: base64 });
+      var file = new Parse.File("thumbnail.jpg", { base64: base64 });
+      return file;
     });
+    // console.log('reached 5');
+    console.log("scaledFiles.length = " + scaledFiles.length);
     return scaledFiles.map(function (scaled) {
       return scaled.save();
     });
   }).then(Parse.Promise.when).then(toArray).then(function (scaledFiles) {
+    console.log(scaledFiles.length, typeof scaledFiles[0]);
     scaledFiles.forEach(function (scaled, i) {
+      console.log("reached 6");
       book.set("cover_" + widths[i], scaled);
     });
+    console.log("PROCESS TOOK " + (Date.now() - start) / 1000 + " SECONDS");
   }).then(response.success, response.error);
 });
